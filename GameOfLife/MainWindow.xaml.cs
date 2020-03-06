@@ -9,7 +9,7 @@ namespace GameOfLife
 {
     public class MainWindow : Window
     {
-        private readonly Grid _mainGrid;
+        private readonly GameGrid _mainGrid;
         private readonly DispatcherTimer _timer;
         private int _genCounter;
 
@@ -19,7 +19,7 @@ namespace GameOfLife
 #if DEBUG
             this.AttachDevTools();
 #endif
-            _mainGrid = new Grid(this.FindControl<Canvas>("MainCanvas"));
+            _mainGrid = this.FindControl<GameGrid>("GameGrid");
             _timer = new DispatcherTimer();
             _timer.Tick += OnTimer;
             _timer.Interval = TimeSpan.FromMilliseconds(200);

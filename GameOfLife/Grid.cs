@@ -1,33 +1,37 @@
 ﻿using System;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
 
 namespace GameOfLife
 {
-    internal class Grid
+    internal class GameGrid : Control
     {
+        private readonly Random _rnd;
+        private int _sizeX;
+        private int _sizeY;
+        private Cell[,] _cells;
+        private Cell[,] _nextGenerationCells;
+        private Geometry[] _cellsVisuals;
 
-        private readonly int _sizeX;
-        private readonly int _sizeY;
-        private readonly Cell[,] _cells;
-        private readonly Cell[,] _nextGenerationCells;
-        private static Random _rnd;
-        private readonly Canvas _drawCanvas;
-        private readonly Ellipse[,] _cellsVisuals;
-
-
-        public Grid(Canvas c)
+        static GameGrid()
         {
-            _drawCanvas = c;
+            ClipToBoundsProperty.OverrideDefaultValue<GameGrid>(true);
+        }
+        
+        public GameGrid()
+        {
             _rnd = new Random();
-            _sizeX = (int)(c.Width / 5);
-            _sizeY = (int)(c.Height / 5);
+        }
+
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            _sizeX = (int)(finalSize.Width / 5);
+            _sizeY = (int)(finalSize.Height / 5);
             _cells = new Cell[_sizeX, _sizeY];
             _nextGenerationCells = new Cell[_sizeX, _sizeY];
-            _cellsVisuals = new Ellipse[_sizeX, _sizeY];
+            _cellsVisuals = new Geometry[_sizeX * _sizeY];
 
             for (var i = 0; i < _sizeX; i++)
                 for (var j = 0; j < _sizeY; j++)
@@ -38,8 +42,22 @@ namespace GameOfLife
 
             SetRandomPattern();
             InitCellsVisuals();
-            UpdateGraphics();
+            
+            return base.ArrangeOverride(finalSize);
+        }
 
+        public override void Render(DrawingContext context)
+        {
+            var pen = new Pen();
+            for (var i = 0; i < _sizeX; i++)
+                for (var j = 0; j < _sizeY; j++)
+                {
+                    var fill = _cells[i, j].IsAlive
+                        ? _cells[i, j].Age < 2 ? Brushes.White : Brushes.DarkGray
+                        : Brushes.Gray;
+
+                    context.DrawGeometry(fill, pen, _cellsVisuals[j * _sizeX + i]);
+                }
         }
 
 
@@ -50,34 +68,30 @@ namespace GameOfLife
                 {
                     _cells[i, j] = new Cell(i, j, 0, false);
                     _nextGenerationCells[i, j] = new Cell(i, j, 0, false);
-                    _cellsVisuals[i, j].Fill = Brushes.Gray;
                 }
+            
+            InvalidateVisual();
         }
 
-
-        private void MouseMove(object sender, PointerEventArgs e)
+        protected override void OnPointerMoved(PointerEventArgs e)
         {
-            var cellVisual = sender as Ellipse;
+            var point = e.GetCurrentPoint(this);
+            var position = point.Position;
+            var i = (int)position.X / 5;
+            var j = (int)position.Y / 5;
+            if (i < 0 || i >= _sizeX || j < 0 || j >= _sizeY)
+                return;
 
-            if (cellVisual == null) return;
-            var i = (int)cellVisual.Margin.Left / 5;
-            var j = (int)cellVisual.Margin.Top / 5;
-
-
-            if (!e.GetCurrentPoint(null).Properties.IsLeftButtonPressed) return;
-            if (_cells[i, j].IsAlive) return;
+            if (!point.Properties.IsLeftButtonPressed) 
+                return;
+            
+            if (_cells[i, j].IsAlive) 
+                return;
+            
             _cells[i, j].IsAlive = true;
             _cells[i, j].Age = 0;
-            cellVisual.Fill = Brushes.White;
-        }
-
-        private void UpdateGraphics()
-        {
-            for (var i = 0; i < _sizeX; i++)
-                for (var j = 0; j < _sizeY; j++)
-                    _cellsVisuals[i, j].Fill = _cells[i, j].IsAlive
-                                                  ? (_cells[i, j].Age < 2 ? Brushes.White : Brushes.DarkGray)
-                                                  : Brushes.Gray;
+            
+            InvalidateVisual();
         }
 
         private void InitCellsVisuals()
@@ -85,23 +99,13 @@ namespace GameOfLife
             for (var i = 0; i < _sizeX; i++)
                 for (var j = 0; j < _sizeY; j++)
                 {
-                    _cellsVisuals[i, j] = new Ellipse();
-                    _cellsVisuals[i, j].Width = _cellsVisuals[i, j].Height = 5;
                     double left = _cells[i, j].PositionX;
                     double top = _cells[i, j].PositionY;
-                    _cellsVisuals[i, j].Margin = new Thickness(left, top, 0, 0);
-                    _cellsVisuals[i, j].Fill = Brushes.Gray;
-                    _drawCanvas.Children.Add(_cellsVisuals[i, j]);
-
-                    _cellsVisuals[i, j].PointerMoved += MouseMove;
-                    _cellsVisuals[i, j].PointerPressed += MouseMove;
+                    _cellsVisuals[j * _sizeX + i] = new EllipseGeometry(new Rect(left, top, 5, 5));
                 }
-
-            UpdateGraphics();
         }
 
-
-        private static bool GetRandomBoolean()
+        private bool GetRandomBoolean()
         {
             return _rnd.NextDouble() > 0.8;
         }
@@ -121,54 +125,26 @@ namespace GameOfLife
                     _cells[i, j].IsAlive = _nextGenerationCells[i, j].IsAlive;
                     _cells[i, j].Age = _nextGenerationCells[i, j].Age;
                 }
-
-            UpdateGraphics();
         }
 
 
         public void Update()
         {
-            var alive = false;
-            var age = 0;
-
             for (var i = 0; i < _sizeX; i++)
             {
                 for (var j = 0; j < _sizeY; j++)
                 {
-                    CalculateNextGeneration(i, j, ref alive, ref age);
+                    CalculateNextGeneration(i, j, out var alive, out var age);
                     _nextGenerationCells[i, j].IsAlive = alive;
                     _nextGenerationCells[i, j].Age = age;
                 }
             }
 
             UpdateToNextGeneration();
+            InvalidateVisual();
         }
 
-        private Cell CalculateNextGeneration(int row, int column)
-        {
-            var alive = _cells[row, column].IsAlive;
-            var age = _cells[row, column].Age;
-            var count = CountNeighbors(row, column);
-
-            if (alive && count < 2)
-                return new Cell(row, column, 0, false);
-
-            if (alive && (count == 2 || count == 3))
-            {
-                _cells[row, column].Age++;
-                return new Cell(row, column, _cells[row, column].Age, true);
-            }
-
-            if (alive && count > 3)
-                return new Cell(row, column, 0, false);
-
-            if (!alive && count == 3)
-                return new Cell(row, column, 0, true);
-
-            return new Cell(row, column, 0, false);
-        }
-
-        private void CalculateNextGeneration(int row, int column, ref bool isAlive, ref int age)
+        private void CalculateNextGeneration(int row, int column, out bool isAlive, out int age)
         {
             isAlive = _cells[row, column].IsAlive;
             age = _cells[row, column].Age;
